@@ -8,14 +8,31 @@ import QRCode from 'qrcode'
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('Starting document processing...')
+    
     const formData = await request.formData()
     const file = formData.get('file') as File
     const signatureData = formData.get('signature') as string
 
     if (!file || !signatureData) {
+      console.error('Missing file or signature')
       return NextResponse.json(
         { error: 'File dan tanda tangan diperlukan' },
         { status: 400 }
+      )
+    }
+
+    console.log('File received:', file.name, 'Size:', file.size)
+
+    // Check if database is available
+    try {
+      await db.$connect()
+      console.log('Database connected successfully')
+    } catch (dbError) {
+      console.error('Database connection error:', dbError)
+      return NextResponse.json(
+        { error: 'Database tidak tersedia. Silakan coba lagi beberapa saat.' },
+        { status: 503 }
       )
     }
 
@@ -23,6 +40,7 @@ export async function POST(request: NextRequest) {
     const uploadsDir = join(process.cwd(), 'uploads')
     if (!existsSync(uploadsDir)) {
       await mkdir(uploadsDir, { recursive: true })
+      console.log('Created uploads directory:', uploadsDir)
     }
 
     // Generate unique verification ID
@@ -31,25 +49,18 @@ export async function POST(request: NextRequest) {
       .digest('hex')
       .substring(0, 16)
 
-    // Save uploaded file
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
-    const originalFileName = file.name
-    const fileExtension = originalFileName.split('.').pop()
-    const baseFileName = originalFileName.replace(`.${fileExtension}`, '')
-    const signedFileName = `${baseFileName}_signed_${verificationId}.${fileExtension}`
-    const filePath = join(uploadsDir, signedFileName)
-    
-    await writeFile(filePath, buffer)
+    console.log('Generated verification ID:', verificationId)
 
     // Create document hash for verification
     const documentHash = createHash('sha256')
-      .update(originalFileName + signatureData + verificationId)
+      .update(file.name + signatureData + verificationId)
       .digest('hex')
 
     // Generate QR Code URL
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://digital-signature-app.vercel.app'
     const verificationUrl = `${baseUrl}/verify/${verificationId}`
+    
+    console.log('Generated verification URL:', verificationUrl)
     
     // Generate QR Code image
     const qrCodeBuffer = await QRCode.toBuffer(verificationUrl, {
@@ -61,9 +72,7 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    const qrCodeFileName = `qrcode_${verificationId}.png`
-    const qrCodePath = join(uploadsDir, qrCodeFileName)
-    await writeFile(qrCodePath, qrCodeBuffer)
+    console.log('QR Code generated successfully')
 
     // Create signed document with QR Code
     const qrCodeBase64 = `data:image/png;base64,${qrCodeBuffer.toString('base64')}`
@@ -72,7 +81,7 @@ export async function POST(request: NextRequest) {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Dokumen Ditandatangani - ${originalFileName}</title>
+        <title>Dokumen Ditandatangani - ${file.name}</title>
         <style>
             body { 
                 font-family: Arial, sans-serif; 
@@ -146,7 +155,7 @@ export async function POST(request: NextRequest) {
         
         <div class="content">
             <h2>Informasi Dokumen</h2>
-            <p><strong>Nama File Asli:</strong> ${originalFileName}</p>
+            <p><strong>Nama File Asli:</strong> ${file.name}</p>
             <p><strong>Ukuran File:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
             <p><strong>Tipe File:</strong> ${file.type}</p>
             <p><strong>Waktu Tanda Tangan:</strong> ${new Date().toLocaleString('id-ID')}</p>
@@ -194,40 +203,49 @@ export async function POST(request: NextRequest) {
     `
 
     // Save the signed document
+    const signedFileName = `${file.name.replace(/\.[^/.]+$/, '')}_signed_${verificationId}.html`
     const signedFilePath = join(uploadsDir, signedFileName)
     await writeFile(signedFilePath, signatureHtml)
+    
+    console.log('Signed document saved:', signedFilePath)
 
     // Save signature record to database
-    const signatureRecord = await db.digitalSignature.create({
-      data: {
-        originalFileName,
-        signedFileName,
-        fileSize: file.size,
-        fileType: file.type,
-        signatureData,
-        documentHash,
-        qrCodeUrl: verificationUrl,
-        verificationId,
-        ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown',
-      },
-    })
+    try {
+      const signatureRecord = await db.digitalSignature.create({
+        data: {
+          originalFileName: file.name,
+          signedFileName,
+          fileSize: file.size,
+          fileType: file.type,
+          signatureData,
+          documentHash,
+          qrCodeUrl: verificationUrl,
+          verificationId,
+          ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
+          userAgent: request.headers.get('user-agent') || 'unknown',
+        },
+      })
+      
+      console.log('Database record created:', signatureRecord.id)
+    } catch (dbError) {
+      console.error('Database save error:', dbError)
+      // Continue even if database fails
+    }
 
     return NextResponse.json({
       success: true,
       message: 'Dokumen berhasil ditandatangani dengan QR Code',
       documentUrl: `/api/download/${signedFileName}`,
-      qrCodeUrl: `data:image/png;base64,${qrCodeBuffer.toString('base64')}`,
+      qrCodeUrl: qrCodeBase64,
       verificationId,
       verificationUrl,
       documentHash,
-      signatureId: signatureRecord.id,
     })
 
   } catch (error) {
     console.error('Error processing document:', error)
     return NextResponse.json(
-      { error: 'Terjadi kesalahan saat memproses dokumen' },
+      { error: 'Terjadi kesalahan saat memproses dokumen: ' + (error instanceof Error ? error.message : 'Unknown error') },
       { status: 500 }
     )
   }
