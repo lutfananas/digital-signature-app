@@ -2,9 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { writeFile, mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
-import { db } from '@/lib/db'
 import { createHash } from 'crypto'
 import QRCode from 'qrcode'
+
+// Database connection with fallback
+let db: any = null;
+
+async function getDatabase() {
+  if (!db) {
+    try {
+      const { db: dbClient } = await import('@/lib/db');
+      db = dbClient;
+      await db.$connect();
+      return db;
+    } catch (error) {
+      console.error('Database connection failed:', error);
+      return null;
+    }
+  }
+  return db;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,18 +41,9 @@ export async function POST(request: NextRequest) {
 
     console.log('File received:', file.name, 'Size:', file.size)
 
-    // Check if database is available
-    try {
-      await db.$connect()
-      console.log('Database connected successfully')
-    } catch (dbError) {
-      console.error('Database connection error:', dbError)
-      return NextResponse.json(
-        { error: 'Database tidak tersedia. Silakan coba lagi beberapa saat.' },
-        { status: 503 }
-      )
-    }
-
+    // Try database connection (optional)
+    const database = await getDatabase();
+    
     // Create uploads directory if it doesn't exist
     const uploadsDir = join(process.cwd(), 'uploads')
     if (!existsSync(uploadsDir)) {
@@ -209,27 +217,29 @@ export async function POST(request: NextRequest) {
     
     console.log('Signed document saved:', signedFilePath)
 
-    // Save signature record to database
-    try {
-      const signatureRecord = await db.digitalSignature.create({
-        data: {
-          originalFileName: file.name,
-          signedFileName,
-          fileSize: file.size,
-          fileType: file.type,
-          signatureData,
-          documentHash,
-          qrCodeUrl: verificationUrl,
-          verificationId,
-          ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
-          userAgent: request.headers.get('user-agent') || 'unknown',
-        },
-      })
-      
-      console.log('Database record created:', signatureRecord.id)
-    } catch (dbError) {
-      console.error('Database save error:', dbError)
-      // Continue even if database fails
+    // Save signature record to database (optional)
+    if (database) {
+      try {
+        const signatureRecord = await database.digitalSignature.create({
+          data: {
+            originalFileName: file.name,
+            signedFileName,
+            fileSize: file.size,
+            fileType: file.type,
+            signatureData,
+            documentHash,
+            qrCodeUrl: verificationUrl,
+            verificationId,
+            ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
+            userAgent: request.headers.get('user-agent') || 'unknown',
+          },
+        })
+        
+        console.log('Database record created:', signatureRecord.id)
+      } catch (dbError) {
+        console.error('Database save error:', dbError)
+        // Continue even if database fails
+      }
     }
 
     return NextResponse.json({
