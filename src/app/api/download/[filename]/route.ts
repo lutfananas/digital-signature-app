@@ -9,7 +9,7 @@ export async function GET(
 ) {
   try {
     const filename = params.filename
-    const uploadsDir = join(process.cwd(), 'uploads')
+    const uploadsDir = join('/tmp', 'uploads')
     const filePath = join(uploadsDir, filename)
 
     if (!existsSync(filePath)) {

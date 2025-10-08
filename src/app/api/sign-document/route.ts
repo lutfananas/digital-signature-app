@@ -44,8 +44,8 @@ export async function POST(request: NextRequest) {
     // Try database connection (optional)
     const database = await getDatabase();
     
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = join(process.cwd(), 'uploads')
+    // Create uploads directory in /tmp for Vercel compatibility
+    const uploadsDir = join('/tmp', 'uploads')
     if (!existsSync(uploadsDir)) {
       await mkdir(uploadsDir, { recursive: true })
       console.log('Created uploads directory:', uploadsDir)
