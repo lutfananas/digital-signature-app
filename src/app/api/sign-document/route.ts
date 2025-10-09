@@ -4,6 +4,7 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { createHash } from 'crypto'
 import QRCode from 'qrcode'
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 
 // Database connection with fallback
 let db: any = null;
@@ -64,14 +65,15 @@ export async function POST(request: NextRequest) {
       .update(file.name + signatureData + verificationId)
       .digest('hex')
 
-    // Generate QR Code URL
+    // Generate QR Code URL for direct download
     const baseUrl = 'https://digital-signature-app-six.vercel.app'
-    const verificationUrl = `${baseUrl}/verify/${verificationId}`
+    const signedFileName = `${file.name.replace(/\.[^/.]+$/, '')}_signed_${verificationId}.pdf`
+    const downloadUrl = `${baseUrl}/api/download/${signedFileName}`
     
-    console.log('Generated verification URL:', verificationUrl)
+    console.log('Generated download URL:', downloadUrl)
     
     // Generate QR Code image
-    const qrCodeBuffer = await QRCode.toBuffer(verificationUrl, {
+    const qrCodeBuffer = await QRCode.toBuffer(downloadUrl, {
       width: 200,
       margin: 2,
       color: {
@@ -82,147 +84,212 @@ export async function POST(request: NextRequest) {
 
     console.log('QR Code generated successfully')
 
-    // Create signed document with QR Code
-    const qrCodeBase64 = `data:image/png;base64,${qrCodeBuffer.toString('base64')}`
+    // Create signed PDF with QR Code integration
+    let signedPdfBuffer: Buffer
     
-    const signatureHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Dokumen Ditandatangani - ${file.name}</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                padding: 20px; 
-                line-height: 1.6;
-            }
-            .header {
-                text-align: center;
-                border-bottom: 2px solid #333;
-                padding-bottom: 20px;
-                margin-bottom: 30px;
-            }
-            .content {
-                margin: 20px 0;
-            }
-            .signature-section {
-                margin-top: 50px;
-                text-align: right;
-                border-top: 1px solid #ccc;
-                padding-top: 20px;
-            }
-            .signature-label {
-                font-size: 14px;
-                color: #666;
-                margin-bottom: 10px;
-            }
-            .signature-image {
-                max-width: 200px;
-                height: auto;
-            }
-            .qr-section {
-                margin-top: 30px;
-                text-align: center;
-                border: 2px dashed #007bff;
-                padding: 20px;
-                border-radius: 10px;
-                background-color: #f8f9fa;
-            }
-            .qr-title {
-                font-weight: bold;
-                color: #007bff;
-                margin-bottom: 10px;
-            }
-            .qr-code {
-                margin: 10px 0;
-            }
-            .qr-instruction {
-                font-size: 12px;
-                color: #666;
-                margin-top: 10px;
-            }
-            .verification-info {
-                background-color: #e7f3ff;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 20px 0;
-            }
-            .footer {
-                margin-top: 30px;
-                font-size: 12px;
-                color: #888;
-                text-align: center;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>DOKUMEN DITANDATANGANI SECARA DIGITAL</h1>
-            <p>Berlaku sejak: ${new Date().toLocaleDateString('id-ID')}</p>
-        </div>
-        
-        <div class="content">
-            <h2>Informasi Dokumen</h2>
-            <p><strong>Nama File Asli:</strong> ${file.name}</p>
-            <p><strong>Ukuran File:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
-            <p><strong>Tipe File:</strong> ${file.type}</p>
-            <p><strong>Waktu Tanda Tangan:</strong> ${new Date().toLocaleString('id-ID')}</p>
-            
-            <div class="verification-info">
-                <h3>Informasi Verifikasi</h3>
-                <p><strong>ID Verifikasi:</strong> ${verificationId}</p>
-                <p><strong>Hash Dokumen:</strong> ${documentHash}</p>
-                <p><strong>URL Verifikasi:</strong> <a href="${verificationUrl}">${verificationUrl}</a></p>
-            </div>
-            
-            <h3>Keterangan</h3>
-            <p>Dokumen ini telah ditandatangani secara digital menggunakan Aplikasi Tanda Tangan Digital dengan QR Code verification.</p>
-            <p>Tanda tangan digital ini valid dan sah sebagai bukti persetujuan.</p>
-        </div>
-        
-        <div class="signature-section">
-            <div class="signature-label">Tanda Tangan Digital:</div>
-            <img src="${signatureData}" alt="Tanda Tangan Digital" class="signature-image" />
-            <p style="margin-top: 10px; font-size: 12px; color: #666;">
-                Ditandatangani pada: ${new Date().toLocaleString('id-ID')}
-            </p>
-        </div>
-        
-        <div class="qr-section">
-            <div class="qr-title">QR CODE VERIFIKASI KEASLIAN DOKUMEN</div>
-            <p>Scan QR Code ini untuk memverifikasi keaslian dokumen</p>
-            <div class="qr-code">
-                <img src="${qrCodeBase64}" alt="QR Code Verifikasi" style="max-width: 150px; height: auto;" />
-            </div>
-            <div class="qr-instruction">
-                <p>1. Buka kamera smartphone atau QR scanner</p>
-                <p>2. Arahkan ke QR Code ini</p>
-                <p>3. Buka link yang muncul untuk verifikasi</p>
-                <p>4. Atau kunjungi: ${verificationUrl}</p>
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>Dokumen ini diproses melalui Aplikasi Tanda Tangan Digital dengan QR Code Verification</p>
-            <p>Dokumen ini sah dan dapat diverifikasi keasliannya secara online</p>
-        </div>
-    </body>
-    </html>
-    `
+    if (file.type === 'application/pdf') {
+      // If it's a PDF, integrate QR Code into it
+      const existingPdfBytes = await readFile(join(uploadsDir, originalFileName))
+      const pdfDoc = await PDFDocument.load(existingPdfBytes)
+      const pages = pdfDoc.getPages()
+      
+      // Add QR Code to the last page
+      const lastPage = pages[pages.length - 1]
+      const { width, height } = lastPage.getSize()
+      
+      // Embed QR Code image
+      const qrCodeImage = await pdfDoc.embedPng(qrCodeBuffer)
+      const qrCodeDims = { width: 100, height: 100 }
+      
+      // Position QR Code at bottom right
+      const qrCodeX = width - qrCodeDims.width - 30
+      const qrCodeY = 30
+      
+      lastPage.drawImage(qrCodeImage, {
+        x: qrCodeX,
+        y: qrCodeY,
+        width: qrCodeDims.width,
+        height: qrCodeDims.height,
+      })
+      
+      // Add signature text
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+      const fontSize = 10
+      
+      // Add verification text
+      lastPage.drawText('Scan QR Code untuk verifikasi keaslian dokumen', {
+        x: qrCodeX - 150,
+        y: qrCodeY + 105,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      // Add signature image if provided
+      if (signatureData) {
+        try {
+          // Extract base64 data from signature
+          const base64Data = signatureData.replace(/^data:image\/png;base64,/, '')
+          const signatureBuffer = Buffer.from(base64Data, 'base64')
+          const signatureImage = await pdfDoc.embedPng(signatureBuffer)
+          
+          // Add signature at bottom right area
+          const signatureWidth = 150
+          const signatureHeight = 75
+          const signatureX = width - signatureWidth - 30
+          const signatureY = qrCodeY + 130
+          
+          lastPage.drawImage(signatureImage, {
+            x: signatureX,
+            y: signatureY,
+            width: signatureWidth,
+            height: signatureHeight,
+          })
+          
+          // Add signature label
+          lastPage.drawText('Tanda Tangan Digital:', {
+            x: signatureX,
+            y: signatureY + 80,
+            size: fontSize,
+            font,
+            color: rgb(0, 0, 0),
+          })
+        } catch (sigError) {
+          console.error('Error adding signature to PDF:', sigError)
+        }
+      }
+      
+      // Add timestamp and verification info
+      const timestampText = `Ditandatangani pada: ${new Date().toLocaleString('id-ID')}`
+      lastPage.drawText(timestampText, {
+        x: 30,
+        y: 30,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      const verificationText = `ID Verifikasi: ${verificationId}`
+      lastPage.drawText(verificationText, {
+        x: 30,
+        y: 50,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      signedPdfBuffer = Buffer.from(await pdfDoc.save())
+      
+    } else {
+      // For non-PDF files, create a simple PDF with the image and QR Code
+      const pdfDoc = await PDFDocument.create()
+      const page = pdfDoc.addPage([600, 800])
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+      
+      // Add title
+      page.drawText('Dokumen Digital Ditandatangani', {
+        x: 50,
+        y: 750,
+        size: 20,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      // Add original image if it's an image file
+      if (file.type.startsWith('image/')) {
+        try {
+          const imageBytes = await readFile(join(uploadsDir, originalFileName))
+          let image
+          
+          if (file.type === 'image/jpeg') {
+            image = await pdfDoc.embedJpg(imageBytes)
+          } else if (file.type === 'image/png') {
+            image = await pdfDoc.embedPng(imageBytes)
+          }
+          
+          if (image) {
+            const imageDims = image.scale(0.5)
+            page.drawImage(image, {
+              x: 50,
+              y: 400,
+              width: imageDims.width,
+              height: imageDims.height,
+            })
+          }
+        } catch (imgError) {
+          console.error('Error adding image to PDF:', imgError)
+        }
+      }
+      
+      // Add QR Code
+      const qrCodeImage = await pdfDoc.embedPng(qrCodeBuffer)
+      page.drawImage(qrCodeImage, {
+        x: 400,
+        y: 50,
+        width: 100,
+        height: 100,
+      })
+      
+      // Add signature
+      if (signatureData) {
+        try {
+          const base64Data = signatureData.replace(/^data:image\/png;base64,/, '')
+          const signatureBuffer = Buffer.from(base64Data, 'base64')
+          const signatureImage = await pdfDoc.embedPng(signatureBuffer)
+          
+          page.drawImage(signatureImage, {
+            x: 50,
+            y: 150,
+            width: 150,
+            height: 75,
+          })
+        } catch (sigError) {
+          console.error('Error adding signature:', sigError)
+        }
+      }
+      
+      // Add text information
+      const fontSize = 12
+      page.drawText(`File Asli: ${file.name}`, {
+        x: 50,
+        y: 100,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      page.drawText(`Tanggal: ${new Date().toLocaleString('id-ID')}`, {
+        x: 50,
+        y: 80,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      page.drawText(`ID Verifikasi: ${verificationId}`, {
+        x: 50,
+        y: 60,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      page.drawText('Scan QR Code untuk unduh dokumen', {
+        x: 350,
+        y: 160,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      })
+      
+      signedPdfBuffer = Buffer.from(await pdfDoc.save())
+    }
 
-    // Save files to /tmp directory for Vercel compatibility
-    const originalFileBuffer = Buffer.from(await file.arrayBuffer())
-    const originalFileName = file.name
-    const originalFilePath = join(uploadsDir, originalFileName)
-    await writeFile(originalFilePath, originalFileBuffer)
+    // Save signed PDF to /tmp directory
+    const signedFilePath = join(uploadsDir, signedFileName)
+    await writeFile(signedFilePath, signedPdfBuffer)
     
-    // Create signature certificate (HTML)
-    const certificateFileName = `${file.name.replace(/\.[^/.]+$/, '')}_certificate_${verificationId}.html`
-    const certificateBuffer = Buffer.from(signatureHtml, 'utf-8')
-    const certificateFilePath = join(uploadsDir, certificateFileName)
-    await writeFile(certificateFilePath, certificateBuffer)
-    
-    console.log('Files saved successfully:', originalFileName, certificateFileName)
+    console.log('Signed PDF saved successfully:', signedFileName)
 
     // Save signature record to database (optional)
     if (database) {
@@ -230,12 +297,12 @@ export async function POST(request: NextRequest) {
         const signatureRecord = await database.digitalSignature.create({
           data: {
             originalFileName: file.name,
-            signedFileName: certificateFileName,
+            signedFileName,
             fileSize: file.size,
-            fileType: file.type,
+            fileType: 'application/pdf',
             signatureData,
             documentHash,
-            qrCodeUrl: verificationUrl,
+            qrCodeUrl: downloadUrl,
             verificationId,
             ipAddress: request.ip || request.headers.get('x-forwarded-for') || 'unknown',
             userAgent: request.headers.get('user-agent') || 'unknown',
@@ -251,12 +318,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Dokumen berhasil ditandatangani dengan QR Code',
-      originalFileUrl: `/api/download/${originalFileName}`,
-      certificateUrl: `/api/download/${certificateFileName}`,
-      qrCodeUrl: qrCodeBase64,
+      message: 'Dokumen PDF berhasil ditandatangani dengan QR Code',
+      documentUrl: `/api/download/${signedFileName}`,
+      qrCodeUrl: `data:image/png;base64,${qrCodeBuffer.toString('base64')}`,
       verificationId,
-      verificationUrl,
+      downloadUrl,
       documentHash,
     })
 
