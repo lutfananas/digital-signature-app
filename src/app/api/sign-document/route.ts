@@ -210,18 +210,17 @@ export async function POST(request: NextRequest) {
     </html>
     `
 
-    // Save the original file and create a separate signature certificate
+    // Convert files to base64 for direct serving
     const originalFileBuffer = Buffer.from(await file.arrayBuffer())
+    const originalFileBase64 = originalFileBuffer.toString('base64')
     const originalFileName = file.name
-    const originalFilePath = join(uploadsDir, originalFileName)
-    await writeFile(originalFilePath, originalFileBuffer)
     
     // Create signature certificate (HTML)
     const certificateFileName = `${file.name.replace(/\.[^/.]+$/, '')}_certificate_${verificationId}.html`
-    const certificateFilePath = join(uploadsDir, certificateFileName)
-    await writeFile(certificateFilePath, signatureHtml)
+    const certificateBuffer = Buffer.from(signatureHtml, 'utf-8')
+    const certificateBase64 = certificateBuffer.toString('base64')
     
-    console.log('Files saved:', originalFileName, certificateFileName)
+    console.log('Files converted to base64:', originalFileName, certificateFileName)
 
     // Save signature record to database (optional)
     if (database) {
@@ -251,8 +250,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Dokumen berhasil ditandatangani dengan QR Code',
-      originalFileUrl: `/api/download/${originalFileName}`,
-      certificateUrl: `/api/download/${certificateFileName}`,
+      originalFileBase64,
+      originalFileName,
+      originalFileType: file.type,
+      certificateBase64,
+      certificateFileName,
       qrCodeUrl: qrCodeBase64,
       verificationId,
       verificationUrl,
