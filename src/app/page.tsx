@@ -13,6 +13,7 @@ export default function Home() {
   const [isDrawing, setIsDrawing] = useState(false)
   const [signatureData, setSignatureData] = useState<string>('')
   const [processedFileUrl, setProcessedFileUrl] = useState<string>('')
+  const [certificateUrl, setCertificateUrl] = useState<string>('')
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
   const [verificationId, setVerificationId] = useState<string>('')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -38,6 +39,7 @@ export default function Home() {
       if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
         setSelectedFile(file)
         setProcessedFileUrl('')
+        setCertificateUrl('')
         setQrCodeUrl('')
         setVerificationId('')
         toast.success('File berhasil diunggah')
@@ -115,7 +117,8 @@ export default function Home() {
 
       if (response.ok) {
         const result = await response.json()
-        setProcessedFileUrl(result.documentUrl)
+        setProcessedFileUrl(result.originalFileUrl)
+        setCertificateUrl(result.certificateUrl)
         setQrCodeUrl(result.qrCodeUrl)
         setVerificationId(result.verificationId)
         toast.success('Dokumen berhasil ditandatangani dengan QR Code!')
@@ -133,7 +136,18 @@ export default function Home() {
     if (processedFileUrl) {
       const a = document.createElement('a')
       a.href = processedFileUrl
-      a.download = `signed_${selectedFile?.name || 'document'}`
+      a.download = selectedFile?.name || 'document'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    }
+  }
+
+  const downloadCertificate = () => {
+    if (certificateUrl) {
+      const a = document.createElement('a')
+      a.href = certificateUrl
+      a.download = `${selectedFile?.name.replace(/\.[^/.]+$/, '')}_certificate.html`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -301,7 +315,15 @@ export default function Home() {
                       className="flex items-center gap-2"
                     >
                       <Download className="w-4 h-4" />
-                      Unduh Dokumen
+                      Unduh File Asli
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={downloadCertificate}
+                      className="flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Unduh Sertifikat
                     </Button>
                     <Button
                       variant="outline"
@@ -320,14 +342,17 @@ export default function Home() {
                   <div className="p-4 bg-green-50 rounded-lg">
                     <h3 className="font-medium text-green-800 mb-2 flex items-center gap-2">
                       <CheckCircle className="w-5 h-5" />
-                      Dokumen Berhasil Ditandatangani!
+                      Proses Berhasil!
                     </h3>
                     <p className="text-sm text-green-700 mb-3">
-                      Dokumen Anda telah ditandatangani secara digital dengan QR Code verifikasi.
+                      Dokumen Anda telah diproses. Anda dapat mengunduh file asli dan sertifikat digital.
                     </p>
                     <div className="space-y-2 text-sm">
                       <p><strong>ID Verifikasi:</strong> {verificationId}</p>
                       <p><strong>Status:</strong> <span className="text-green-600">Terverifikasi</span></p>
+                      <p className="text-xs text-green-600 mt-2">
+                        💡 File asli tetap utuh, sertifikat berisi tanda tangan dan QR Code verifikasi
+                      </p>
                     </div>
                   </div>
 
