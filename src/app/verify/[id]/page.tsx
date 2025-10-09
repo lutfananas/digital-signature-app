@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { createHash } from 'crypto'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle, XCircle, AlertCircle, FileText, Calendar, Shield, QrCode } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { CheckCircle, XCircle, AlertCircle, FileText, Calendar, Shield, QrCode, Download } from 'lucide-react'
 
 interface VerifyPageProps {
   params: {
@@ -38,7 +39,7 @@ async function getDocumentData(verificationId: string) {
   return {
     id: 'fallback-id',
     originalFileName: 'Document (verified)',
-    signedFileName: 'document_certificate.html',
+    signedFileName: `${verificationId}_signed.pdf`,
     fileSize: 1024,
     fileType: 'application/pdf',
     documentHash: createHash('sha256').update(verificationId).digest('hex'),
@@ -105,6 +106,35 @@ export default async function VerifyPage({ params }: VerifyPageProps) {
               <Badge variant={isValid ? 'default' : 'destructive'} className="text-lg px-4 py-2">
                 {isValid ? 'VALID' : 'INVALID'}
               </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Download Card */}
+        <Card className="mb-6 border-2 border-blue-200 bg-blue-50">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Download className="w-12 h-12 text-blue-600" />
+                <div>
+                  <h2 className="text-2xl font-bold text-blue-700">
+                    Unduh Dokumen Asli
+                  </h2>
+                  <p className="text-sm text-blue-600">
+                    Dokumen PDF yang ditandatangani dengan QR Code
+                  </p>
+                </div>
+              </div>
+              <Button 
+                onClick={() => {
+                  const downloadUrl = `/api/download/${document.signedFileName}`
+                  window.open(downloadUrl, '_blank')
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Unduh PDF
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -231,7 +261,7 @@ export default async function VerifyPage({ params }: VerifyPageProps) {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                    <span>QR Code unik untuk setiap dokumen</span>
+                    <span>QR Code terintegrasi langsung dalam PDF</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
@@ -239,7 +269,7 @@ export default async function VerifyPage({ params }: VerifyPageProps) {
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                    <span>Verifikasi real-time online</span>
+                    <span>Download langsung via QR Code scan</span>
                   </li>
                 </ul>
               </div>
@@ -249,7 +279,7 @@ export default async function VerifyPage({ params }: VerifyPageProps) {
                 <ol className="space-y-2 text-sm">
                   <li className="flex items-start gap-2">
                     <span className="font-semibold text-blue-600">1.</span>
-                    <span>Scan QR Code pada dokumen asli</span>
+                    <span>Scan QR Code pada dokumen PDF</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="font-semibold text-blue-600">2.</span>
@@ -261,7 +291,7 @@ export default async function VerifyPage({ params }: VerifyPageProps) {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="font-semibold text-blue-600">4.</span>
-                    <span>Bandingkan informasi dengan dokumen fisik</span>
+                    <span>Unduh dokumen asli dari halaman ini</span>
                   </li>
                 </ol>
               </div>
