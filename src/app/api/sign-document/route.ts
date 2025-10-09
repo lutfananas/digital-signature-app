@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       .digest('hex')
 
     // Generate QR Code URL
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://digital-signature-app.vercel.app'
+    const baseUrl = 'https://digital-signature-app-six.vercel.app'
     const verificationUrl = `${baseUrl}/verify/${verificationId}`
     
     console.log('Generated verification URL:', verificationUrl)
@@ -210,17 +210,19 @@ export async function POST(request: NextRequest) {
     </html>
     `
 
-    // Convert files to base64 for direct serving
+    // Save files to /tmp directory for Vercel compatibility
     const originalFileBuffer = Buffer.from(await file.arrayBuffer())
-    const originalFileBase64 = originalFileBuffer.toString('base64')
     const originalFileName = file.name
+    const originalFilePath = join(uploadsDir, originalFileName)
+    await writeFile(originalFilePath, originalFileBuffer)
     
     // Create signature certificate (HTML)
     const certificateFileName = `${file.name.replace(/\.[^/.]+$/, '')}_certificate_${verificationId}.html`
     const certificateBuffer = Buffer.from(signatureHtml, 'utf-8')
-    const certificateBase64 = certificateBuffer.toString('base64')
+    const certificateFilePath = join(uploadsDir, certificateFileName)
+    await writeFile(certificateFilePath, certificateBuffer)
     
-    console.log('Files converted to base64:', originalFileName, certificateFileName)
+    console.log('Files saved successfully:', originalFileName, certificateFileName)
 
     // Save signature record to database (optional)
     if (database) {
@@ -250,11 +252,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Dokumen berhasil ditandatangani dengan QR Code',
-      originalFileBase64,
-      originalFileName,
-      originalFileType: file.type,
-      certificateBase64,
-      certificateFileName,
+      originalFileUrl: `/api/download/${originalFileName}`,
+      certificateUrl: `/api/download/${certificateFileName}`,
       qrCodeUrl: qrCodeBase64,
       verificationId,
       verificationUrl,

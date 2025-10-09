@@ -12,11 +12,8 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [signatureData, setSignatureData] = useState<string>('')
-  const [originalFileBase64, setOriginalFileBase64] = useState<string>('')
-  const [originalFileName, setOriginalFileName] = useState<string>('')
-  const [originalFileType, setOriginalFileType] = useState<string>('')
-  const [certificateBase64, setCertificateBase64] = useState<string>('')
-  const [certificateFileName, setCertificateFileName] = useState<string>('')
+  const [processedFileUrl, setProcessedFileUrl] = useState<string>('')
+  const [certificateUrl, setCertificateUrl] = useState<string>('')
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
   const [verificationId, setVerificationId] = useState<string>('')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -41,11 +38,8 @@ export default function Home() {
     if (file) {
       if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
         setSelectedFile(file)
-        setOriginalFileBase64('')
-        setOriginalFileName('')
-        setOriginalFileType('')
-        setCertificateBase64('')
-        setCertificateFileName('')
+        setProcessedFileUrl('')
+        setCertificateUrl('')
         setQrCodeUrl('')
         setVerificationId('')
         toast.success('File berhasil diunggah')
@@ -123,11 +117,8 @@ export default function Home() {
 
       if (response.ok) {
         const result = await response.json()
-        setOriginalFileBase64(result.originalFileBase64)
-        setOriginalFileName(result.originalFileName)
-        setOriginalFileType(result.originalFileType)
-        setCertificateBase64(result.certificateBase64)
-        setCertificateFileName(result.certificateFileName)
+        setProcessedFileUrl(result.originalFileUrl)
+        setCertificateUrl(result.certificateUrl)
         setQrCodeUrl(result.qrCodeUrl)
         setVerificationId(result.verificationId)
         toast.success('Dokumen berhasil ditandatangani dengan QR Code!')
@@ -142,10 +133,10 @@ export default function Home() {
   }
 
   const downloadDocument = () => {
-    if (originalFileBase64 && originalFileName) {
+    if (processedFileUrl) {
       const a = document.createElement('a')
-      a.href = `data:${originalFileType};base64,${originalFileBase64}`
-      a.download = originalFileName
+      a.href = processedFileUrl
+      a.download = selectedFile?.name || 'document'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -153,10 +144,10 @@ export default function Home() {
   }
 
   const downloadCertificate = () => {
-    if (certificateBase64 && certificateFileName) {
+    if (certificateUrl) {
       const a = document.createElement('a')
-      a.href = `data:text/html;base64,${certificateBase64}`
-      a.download = certificateFileName
+      a.href = certificateUrl
+      a.download = `${selectedFile?.name.replace(/\.[^/.]+$/, '')}_certificate.html`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -316,7 +307,7 @@ export default function Home() {
                   )}
                 </Button>
 
-                {originalFileBase64 && (
+                {processedFileUrl && (
                   <>
                     <Button
                       variant="outline"
@@ -346,7 +337,7 @@ export default function Home() {
                 )}
               </div>
 
-              {originalFileBase64 && qrCodeUrl && (
+              {processedFileUrl && qrCodeUrl && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="p-4 bg-green-50 rounded-lg">
                     <h3 className="font-medium text-green-800 mb-2 flex items-center gap-2">
